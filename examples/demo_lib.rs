@@ -2,13 +2,13 @@
 compile_error!("feature \"use_epi\" must be used");
 
 use egui_backend::{
-    egui,
-    epi::{App, Frame, IntegrationInfo},
-    get_frame_time, gl, sdl2,
-    sdl2::event::Event,
-    sdl2::video::GLProfile,
-    sdl2::video::SwapInterval,
-    DpiScaling, ShaderVersion, Signal,
+	egui,
+	epi::{App, Frame, IntegrationInfo},
+	get_frame_time, gl_helper, sdl2,
+	sdl2::event::Event,
+	sdl2::video::GLProfile,
+	sdl2::video::SwapInterval,
+	DpiScaling, Signal,
 };
 use epi::backend::FrameData;
 use std::{sync::Arc, time::Instant};
@@ -54,9 +54,11 @@ fn main() {
         .gl_set_swap_interval(SwapInterval::VSync)
         .unwrap();
 
+    let gl: gl::Gl = gl::Gl::load_with(|s| video_subsystem.gl_get_proc_address(s) as *const std::os::raw::c_void);
+
     // Init egui stuff
     let (mut painter, mut egui_state) =
-        egui_backend::with_sdl2(&window, ShaderVersion::Default, DpiScaling::Custom(1.25));
+        egui_backend::with_sdl2(&gl, &window,  DpiScaling::Custom(1.25));
     let mut app = egui_demo_lib::WrapApp::default();
     let mut egui_ctx = egui::Context::default();
     let mut event_pump = sdl_context.event_pump().unwrap();
@@ -127,8 +129,8 @@ fn main() {
         // First clear the background to something nice.
         unsafe {
             // Clear the screen to green
-            gl::ClearColor(0.3, 0.6, 0.3, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
+            gl_helper::ClearColor(0.3, 0.6, 0.3, 1.0);
+            gl_helper::Clear(gl_helper::COLOR_BUFFER_BIT);
         }
 
         painter.paint_jobs(None, paint_jobs, &egui_ctx.font_image());

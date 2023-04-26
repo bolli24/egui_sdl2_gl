@@ -11,7 +11,7 @@ use gl::types::{GLuint, GLint};
 use memoffset::offset_of;
 use sdl2::video::Window;
 
-use crate::{check_for_gl_error, gl::{get_parameter_string, get_parameter_i32, get_uniform_location, create_buffer, get_attrib_location, color_mask, blend_equation_separate, blend_func_separate, buffer_data_u8_slice, create_texture}, check_for_gl_error_even_in_release};
+use crate::{check_for_gl_error, gl_helper::{get_parameter_string, get_parameter_i32, get_uniform_location, create_buffer, get_attrib_location, color_mask, blend_equation_separate, blend_func_separate, buffer_data_u8_slice, create_texture}, check_for_gl_error_even_in_release};
 use crate::misc_util::{compile_shader, link_program};
 use crate::shader_version::ShaderVersion;
 use crate::vao;
@@ -42,6 +42,7 @@ impl TextureFilterExt for egui::TextureFilter {
 /// This struct must be destroyed with [`Painter::destroy`] before dropping, to ensure OpenGL
 /// objects have been properly deleted and are not leaked.
 pub struct Painter {
+    gl: gl::Gl,
     // from egui_glow
     pub pixels_per_point: f32,
     pub screen_size_px: (u32, u32),
@@ -101,6 +102,7 @@ impl Painter {
     /// * failed to create postprocess on webgl with `sRGB` support
     /// * failed to create buffer
     pub fn new(
+        gl: &gl::Gl,
         window: &Window,
         scale: f32,
         shader_version: ShaderVersion,
@@ -114,13 +116,13 @@ impl Painter {
 
         // Code from egui_glow
 
-        check_for_gl_error_even_in_release!("starting Painter::new");
+        check_for_gl_error_even_in_release!(&gl, "starting Painter::new");
 
         // some useful debug info. all three of them are present in gl 1.1.
         unsafe {
-            let version = get_parameter_string(gl::VERSION);
-            let renderer = get_parameter_string(gl::RENDERER);
-            let vendor = get_parameter_string(gl::VENDOR);
+            let version = get_parameter_string(&gl, gl::VERSION);
+            let renderer = get_parameter_string(&gl, gl::RENDERER);
+            let vendor = get_parameter_string(&gl, gl::VENDOR);
             tracing::debug!(
                 "\nopengl version: {version}\nopengl renderer: {renderer}\nopengl vendor: {vendor}"
             );
@@ -129,7 +131,7 @@ impl Painter {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let mut major: GLint = 0;
-            unsafe { gl::GetIntegerv(gl::MAJOR_VERSION, &mut major) };
+            unsafe { gl.GetIntegerv(gl::MAJOR_VERSION, &mut major) };
             if major < 2 {
                 // this checks on desktop that we are not using opengl 1.1 microsoft sw rendering context.
                 // ShaderVersion::get fn will segfault due to SHADING_LANGUAGE_VERSION (added in gl2.0)
@@ -137,7 +139,7 @@ impl Painter {
             }
         }
 
-        let max_texture_side = unsafe { get_parameter_i32(gl::MAX_TEXTURE_SIZE) } as usize;
+        let max_texture_side = unsafe { get_parameter_i32(&gl, gl::MAX_TEXTURE_SIZE) } as usize;
         // let shader_version = shader_version.unwrap_or_else(|| ShaderVersion::get());
         let shader_version_declaration = shader_version.version_declaration();
         tracing::debug!("Shader header: {:?}.", shader_version_declaration);
@@ -154,6 +156,7 @@ impl Painter {
 
         unsafe {
             let vert = compile_shader(
+                    gl,
                 gl::VERTEX_SHADER,
                 &format!(
                     "{}\n#define NEW_SHADER_INTERFACE {}\n{}\n{}",
@@ -164,6 +167,7 @@ impl Painter {
                 ),
             )?;
             let frag = compile_shader(
+                    gl,
                 gl::FRAGMENT_SHADER,
                 &format!(
                     "{}\n#define NEW_SHADER_INTERFACE {}\n#define SRGB_TEXTURES {}\n{}\n{}",
@@ -174,19 +178,19 @@ impl Painter {
                     FRAG_SRC
                 ),
             )?;
-            let program = link_program([vert, frag].iter().map(|sh| *sh))?;
-            gl::DetachShader(program, vert);
-            gl::DetachShader(program, frag);
-            gl::DeleteShader(vert);
-            gl::DeleteShader(frag);
-            let u_screen_size = get_uniform_location(program, "u_screen_size").unwrap();
-            let u_sampler = get_uniform_location(program, "u_sampler").unwrap();
+            let program = link_program(&gl, [vert, frag].iter().map(|sh| *sh))?;
+            gl.DetachShader(program, vert);
+            gl.DetachShader(program, frag);
+            gl.DeleteShader(vert);
+            gl.DeleteShader(frag);
+            let u_screen_size = get_uniform_location(&gl, program, "u_screen_size").unwrap();
+            let u_sampler = get_uniform_location(&gl, program, "u_sampler").unwrap();
 
-            let vbo = create_buffer()?;
+            let vbo = create_buffer(&gl)?;
 
-            let a_pos_loc = get_attrib_location(program, "a_pos").unwrap();
-            let a_tc_loc = get_attrib_location(program, "a_tc").unwrap();
-            let a_srgba_loc = get_attrib_location(program, "a_srgba").unwrap();
+            let a_pos_loc = get_attrib_location(&gl, program, "a_pos").unwrap();
+            let a_tc_loc = get_attrib_location(&gl, program, "a_tc").unwrap();
+            let a_srgba_loc = get_attrib_location(&gl, program, "a_srgba").unwrap();
 
             let stride = std::mem::size_of::<Vertex>() as i32;
             let buffer_infos = vec![
@@ -215,13 +219,14 @@ impl Painter {
                     offset: offset_of!(Vertex, color) as i32,
                 },
             ];
-            let vao = crate::vao::VertexArrayObject::new(vbo, buffer_infos);
+            let vao = crate::vao::VertexArrayObject::new(&gl, vbo, buffer_infos);
 
-            let element_array_buffer = create_buffer()?;
+            let element_array_buffer = create_buffer(&gl)?;
 
-            crate::check_for_gl_error_even_in_release!("after Painter::new");
+            crate::check_for_gl_error_even_in_release!(&gl, "after Painter::new");
 
             Ok(Painter {
+                gl: gl.clone(),
                 pixels_per_point,
                 screen_size_px,
                 max_texture_side,
@@ -271,16 +276,17 @@ impl Painter {
         // [width_in_pixels, height_in_pixels]: [u32; 2],
         // pixels_per_point: f32,
     ) -> (u32, u32) {
-        gl::Enable(gl::SCISSOR_TEST);
+        self.gl.Enable(gl::SCISSOR_TEST);
         // egui outputs mesh in both winding orders
-        gl::Disable(gl::CULL_FACE);
-        gl::Disable(gl::DEPTH_TEST);
+        self.gl.Disable(gl::CULL_FACE);
+        self.gl.Disable(gl::DEPTH_TEST);
 
-        color_mask(true, true, true, true);
+        color_mask(&self.gl, true, true, true, true);
 
-        gl::Enable(gl::BLEND);
-        blend_equation_separate(gl::FUNC_ADD, gl::FUNC_ADD);
+        self.gl.Enable(gl::BLEND);
+        blend_equation_separate(&self.gl, gl::FUNC_ADD, gl::FUNC_ADD);
         blend_func_separate(
+            &self.gl,
             // egui outputs colors with premultiplied alpha:
             gl::ONE,
             gl::ONE_MINUS_SRC_ALPHA,
@@ -291,8 +297,8 @@ impl Painter {
         );
 
         if !cfg!(target_arch = "wasm32") {
-            gl::Disable(gl::FRAMEBUFFER_SRGB);
-            check_for_gl_error!("FRAMEBUFFER_SRGB");
+            self.gl.Disable(gl::FRAMEBUFFER_SRGB);
+            check_for_gl_error!(&self.gl, "FRAMEBUFFER_SRGB");
         }
 
         let width_in_pixels = self.screen_size_px.0;
@@ -300,17 +306,17 @@ impl Painter {
         let width_in_points = width_in_pixels as f32 / self.pixels_per_point;
         let height_in_points = height_in_pixels as f32 / self.pixels_per_point;
 
-        gl::Viewport(0, 0, width_in_pixels as i32, height_in_pixels as i32);
-        gl::UseProgram(self.program);
+        self.gl.Viewport(0, 0, width_in_pixels as i32, height_in_pixels as i32);
+        self.gl.UseProgram(self.program);
 
-        gl::Uniform2f(self.u_screen_size as i32, width_in_points, height_in_points);
-        gl::Uniform1i(self.u_sampler, 0);
-        gl::ActiveTexture(gl::TEXTURE0);
+        self.gl.Uniform2f(self.u_screen_size as i32, width_in_points, height_in_points);
+        self.gl.Uniform1i(self.u_sampler, 0);
+        self.gl.ActiveTexture(gl::TEXTURE0);
 
         self.vao.bind();
-        gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.element_array_buffer);
+        self.gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.element_array_buffer);
 
-        check_for_gl_error!("prepare_painting");
+        check_for_gl_error!(&self.gl, "prepare_painting");
 
         (width_in_pixels, height_in_pixels)
     }
@@ -367,7 +373,7 @@ impl Painter {
             primitive,
         } in clipped_primitives
         {
-            set_clip_rect(size_in_pixels, self.pixels_per_point, *clip_rect);
+            set_clip_rect(&self.gl, size_in_pixels, self.pixels_per_point, *clip_rect);
 
             match primitive {
                 Primitive::Mesh(mesh) => {
@@ -387,7 +393,7 @@ impl Painter {
                         let rect_max_y = rect_max_y.round() as i32;
 
                         unsafe {
-                            gl::Viewport(
+                            self.gl.Viewport(
                                 rect_min_x,
                                 size_in_pixels.1 as i32 - rect_max_y,
                                 rect_max_x - rect_min_x,
@@ -408,7 +414,7 @@ impl Painter {
                             tracing::warn!("Warning: Unsupported render callback. Expected egui_glow::CallbackFn");
                         }
 
-                        check_for_gl_error!("callback");
+                        check_for_gl_error!(&self.gl, "callback");
 
                         // Restore state:
                         unsafe { self.prepare_painting() };
@@ -419,11 +425,10 @@ impl Painter {
 
         unsafe {
             self.vao.unbind();
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
+            self.gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
+            self.gl.Disable(gl::SCISSOR_TEST);
 
-            gl::Disable(gl::SCISSOR_TEST);
-
-            check_for_gl_error!("painting");
+            // check_for_gl_error!("painting");
         }
     }
 
@@ -432,25 +437,27 @@ impl Painter {
         debug_assert!(mesh.is_valid());
         if let Some(texture) = self.texture(mesh.texture_id) {
             unsafe {
-                gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
+                self.gl.BindBuffer(gl::ARRAY_BUFFER, self.vbo);
                 buffer_data_u8_slice(
+                    &self.gl,
                     gl::ARRAY_BUFFER,
                     bytemuck::cast_slice(&mesh.vertices),
                     gl::STREAM_DRAW,
                 );
 
-                gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.element_array_buffer);
+                self.gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.element_array_buffer);
                 buffer_data_u8_slice(
+                    &self.gl,
                     gl::ELEMENT_ARRAY_BUFFER,
                     bytemuck::cast_slice(&mesh.indices),
                     gl::STREAM_DRAW,
                 );
 
-                gl::BindBuffer(gl::TEXTURE_2D, texture);
+                self.gl.BindBuffer(gl::TEXTURE_2D, texture);
             }
 
             unsafe {
-                gl::DrawElements(
+                self.gl.DrawElements(
                     gl::TRIANGLES,
                     mesh.indices.len() as i32,
                     gl::UNSIGNED_INT,
@@ -458,7 +465,7 @@ impl Painter {
                 );
             }
 
-            check_for_gl_error!("paint_mesh");
+            // check_for_gl_error!("paint_mesh");
         } else {
             tracing::warn!("Failed to find texture {:?}", mesh.texture_id);
         }
@@ -468,13 +475,14 @@ impl Painter {
 
     pub fn set_texture(&mut self, tex_id: egui::TextureId, delta: &egui::epaint::ImageDelta) {
         self.assert_not_destroyed();
+        let local_gl = &self.gl.clone();
 
         let gl_texture = *self
             .textures
             .entry(tex_id)
-            .or_insert_with(|| unsafe { create_texture().unwrap() });
+            .or_insert_with(|| unsafe { create_texture(&local_gl).unwrap() });
         unsafe {
-            gl::BindTexture(gl::TEXTURE_2D, gl_texture);
+            self.gl.BindTexture(gl::TEXTURE_2D, gl_texture);
         }
 
         match &delta.image {
@@ -523,37 +531,37 @@ impl Painter {
         );
 
         unsafe {
-            gl::TexParameteri(
+            self.gl.TexParameteri(
                 gl::TEXTURE_2D,
                 gl::TEXTURE_MAG_FILTER,
                 options.magnification.glow_code() as i32,
             );
-            gl::TexParameteri(
+            self.gl.TexParameteri(
                 gl::TEXTURE_2D,
                 gl::TEXTURE_MIN_FILTER,
                 options.minification.glow_code() as i32,
             );
 
-            gl::TexParameteri(
+            self.gl.TexParameteri(
                 gl::TEXTURE_2D,
                 gl::TEXTURE_WRAP_S,
                 gl::CLAMP_TO_EDGE as i32,
             );
-            gl::TexParameteri(
+            self.gl.TexParameteri(
                 gl::TEXTURE_2D,
                 gl::TEXTURE_WRAP_T,
                 gl::CLAMP_TO_EDGE as i32,
             );
-            check_for_gl_error!("tex_parameter");
+            // check_for_gl_error!("tex_parameter");
 
             // Simplified to bare minimum for "real" OpenGL
             let (internal_format, src_format) = (gl::RGBA8, gl::RGBA);
 
-            gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+            self.gl.PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 
             let level = 0;
             if let Some([x, y]) = pos {
-                gl::TexSubImage2D(
+                self.gl.TexSubImage2D(
                     gl::TEXTURE_2D,
                     level,
                     x as _,
@@ -564,10 +572,10 @@ impl Painter {
                     gl::UNSIGNED_BYTE,
                     data.as_ptr() as *const c_void,
                 );
-                check_for_gl_error!("tex_sub_image_2d");
+                check_for_gl_error!(&self.gl, "tex_sub_image_2d");
             } else {
                 let border = 0;
-                gl::TexImage2D(
+                self.gl.TexImage2D(
                     gl::TEXTURE_2D,
                     level,
                     internal_format as _,
@@ -578,14 +586,14 @@ impl Painter {
                     gl::UNSIGNED_BYTE,
                     data.as_ptr() as *const c_void,
                 );
-                check_for_gl_error!("tex_image_2d");
+                // check_for_gl_error!("tex_image_2d");
             }
         }
     }
 
     pub fn free_texture(&mut self, tex_id: egui::TextureId) {
         if let Some(old_tex) = self.textures.remove(&tex_id) {
-            unsafe { gl::DeleteTextures(1, &old_tex) };
+            unsafe { self.gl.DeleteTextures(1, &old_tex) };
         }
     }
 
@@ -618,7 +626,7 @@ impl Painter {
     pub fn read_screen_rgba(&self, [w, h]: [u32; 2]) -> Vec<u8> {
         let mut pixels = vec![0_u8; (w * h * 4) as usize];
         unsafe {
-            gl::ReadPixels(
+            self.gl.ReadPixels(
                 0,
                 0,
                 w as _,
@@ -634,7 +642,7 @@ impl Painter {
     pub fn read_screen_rgb(&self, [w, h]: [u32; 2]) -> Vec<u8> {
         let mut pixels = vec![0_u8; (w * h * 3) as usize];
         unsafe {
-            gl::ReadPixels(
+            self.gl.ReadPixels(
                 0,
                 0,
                 w as _,
@@ -648,14 +656,14 @@ impl Painter {
     }
 
     unsafe fn destroy_gl(&self) {
-        gl::DeleteProgram(self.program);
+        self.gl.DeleteProgram(self.program);
         for tex in self.textures.values() {
-            gl::DeleteTextures(1, tex);
+            self.gl.DeleteTextures(1, tex);
         }
-        gl::DeleteBuffers(1, &self.vbo);
-        gl::DeleteBuffers(1, &self.element_array_buffer);
+        self.gl.DeleteBuffers(1, &self.vbo);
+        self.gl.DeleteBuffers(1, &self.element_array_buffer);
         for t in &self.textures_to_destroy {
-            gl::DeleteTextures(1, t);
+            self.gl.DeleteTextures(1, t);
         }
     }
 
@@ -679,23 +687,23 @@ impl Painter {
     }
 }
 
-pub fn clear(screen_size_in_pixels: [u32; 2], clear_color: [f32; 4]) {
+pub fn clear(gl: &gl::Gl, screen_size_in_pixels: [u32; 2], clear_color: [f32; 4]) {
     unsafe {
-        gl::Disable(gl::SCISSOR_TEST);
+        gl.Disable(gl::SCISSOR_TEST);
 
-        gl::Viewport(
+        gl.Viewport(
             0,
             0,
             screen_size_in_pixels[0] as i32,
             screen_size_in_pixels[1] as i32,
         );
-        gl::ClearColor(
+        gl.ClearColor(
             clear_color[0],
             clear_color[1],
             clear_color[2],
             clear_color[3],
         );
-        gl::Clear(gl::COLOR_BUFFER_BIT);
+        gl.Clear(gl::COLOR_BUFFER_BIT);
     }
 }
 
@@ -710,6 +718,7 @@ impl Drop for Painter {
 }
 
 fn set_clip_rect(
+    gl: &gl::Gl,
     size_in_pixels: (u32, u32),
     pixels_per_point: f32,
     clip_rect: Rect,
@@ -733,7 +742,7 @@ fn set_clip_rect(
     let clip_max_y = clip_max_y.clamp(clip_min_y, size_in_pixels.1 as i32);
 
     unsafe {
-        gl::Scissor(
+        gl.Scissor(
             clip_min_x,
             size_in_pixels.1 as i32 - clip_max_y,
             clip_max_x - clip_min_x,

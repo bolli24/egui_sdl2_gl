@@ -1,4 +1,4 @@
-pub mod gl;
+pub mod gl_helper;
 mod misc_util;
 mod shader_version;
 mod vao;
@@ -87,6 +87,7 @@ pub struct EguiStateHandler {
 }
 
 pub fn with_sdl2(
+    gl: &gl::Gl,
     window: &sdl2::video::Window,
     // shader_ver: ShaderVersion,
     scale: DpiScaling,
@@ -98,7 +99,7 @@ pub fn with_sdl2(
         }
     };
     let painter =
-        Painter::new(window, scale, ShaderVersion::Gl140, "").expect("failed to create painter");
+        Painter::new(&gl, window, scale, ShaderVersion::Gl140, "").expect("failed to create painter");
     EguiStateHandler::new(painter)
 }
 

@@ -1,7 +1,7 @@
 [package]
 name = "egui_sdl2_gl"
 version = "0.16.0"
-authors = ["Arjun Nair <arjunair@gmail.com>"]
+authors = ["Arjun Nair <arjunair@gmail.com>", "bolli24"]
 edition = "2018"
 description = "Backend for Egui to use with sdl2-rs and open gl"
 homepage = "https://github.com/ArjunNair/egui_sdl2_gl"
@@ -14,16 +14,12 @@ include = ["**/*.rs", "Cargo.toml"]
 # build = "build.rs"
 
 [dependencies]
-gl = "0.14"
+gl = { path= "../gl" }
 egui = { version = "0.21", features =["bytemuck"] }
-sdl2 = "0.35"
+sdl2 = { version = "0.35", features = ["bundled", "static-link"] }
 tracing = "*"
 memoffset = "0.6"
 bytemuck = "1.13"
-# Conditionally get the Windows API bindings
-
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellscalingapi"] }
 
 [dependencies.epi]
 version = "0.17"
@@ -35,13 +31,6 @@ sdl2_gfx = ["sdl2/gfx"]
 sdl2_mixer = ["sdl2/mixer"]
 sdl2_image = ["sdl2/image"]
 sdl2_ttf = ["sdl2/ttf"]
-# SDL2 build features
-sdl2_use-bindgen = ["sdl2/use-bindgen"]
-sdl2_use-pkgconfig = ["sdl2/use-pkgconfig"]
-sdl2_use-vcpkg = ["sdl2/use-vcpkg"]
-sdl2_use-mac_framework = ["sdl2/use_mac_framework"]
-sdl2_bundled = ["sdl2/bundled"]
-sdl2_static-link = ["sdl2/static-link"]
 use_epi = ["epi"]
 
 [dev-dependencies]

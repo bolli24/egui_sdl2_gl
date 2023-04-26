@@ -14,12 +14,12 @@ use std::ffi::CString;
 macro_rules! check_for_gl_error {
     () => {{
         if cfg!(debug_assertions) {
-            $crate::gl::check_for_gl_error_impl(file!(), line!(), "")
+            $crate::gl_helper::check_for_gl_error_impl(file!(), line!(), "")
         }
     }};
-    ($context: literal) => {{
+    ($gl: expr, $context: literal) => {{
         if cfg!(debug_assertions) {
-            $crate::gl::check_for_gl_error_impl(file!(), line!(), $context)
+            $crate::gl_helper::check_for_gl_error_impl($gl, file!(), line!(), $context)
         }
     }};
 }
@@ -37,17 +37,17 @@ macro_rules! check_for_gl_error {
 #[macro_export]
 macro_rules! check_for_gl_error_even_in_release {
     () => {{
-        $crate::gl::check_for_gl_error_impl(file!(), line!(), "")
+        $crate::gl_helper::check_for_gl_error_impl(file!(), line!(), "")
     }};
-    ($context: literal) => {{
-        $crate::gl::check_for_gl_error_impl(file!(), line!(), $context)
+    ($gl: expr, $context: literal) => {{
+        $crate::gl_helper::check_for_gl_error_impl($gl, file!(), line!(), $context)
     }};
 }
 
 #[doc(hidden)]
-pub fn check_for_gl_error_impl(file: &str, line: u32, context: &str) {
+pub fn check_for_gl_error_impl(gl: &gl::Gl, file: &str, line: u32, context: &str) {
     #[allow(unsafe_code)]
-    let error_code = unsafe { gl::GetError() };
+    let error_code = unsafe { gl.GetError() };
     if error_code != gl::NO_ERROR {
         let error_str = match error_code {
             gl::INVALID_ENUM => "GL_INVALID_ENUM",
@@ -84,8 +84,8 @@ pub fn check_for_gl_error_impl(file: &str, line: u32, context: &str) {
     }
 }
 
-pub unsafe fn get_parameter_string(parameter: u32) -> String {
-    let raw_ptr = gl::GetString(parameter);
+pub unsafe fn get_parameter_string(gl: &gl::Gl, parameter: u32) -> String {
+    let raw_ptr = gl.GetString(parameter);
     if raw_ptr.is_null() {
         panic!(
             "Get parameter string 0x{:X} failed. Maybe your GL context version is too outdated.",
@@ -98,18 +98,18 @@ pub unsafe fn get_parameter_string(parameter: u32) -> String {
         .to_owned()
 }
 
-pub unsafe fn get_parameter_i32(parameter: u32) -> i32 {
+pub unsafe fn get_parameter_i32(gl: &gl::Gl, parameter: u32) -> i32 {
     let mut value = 0;
-    gl::GetIntegerv(parameter, &mut value);
+    gl.GetIntegerv(parameter, &mut value);
     value
 }
 
-pub unsafe fn create_shader(shader_type: u32) -> Result<GLuint, String> {
-    Ok(gl::CreateShader(shader_type as u32)) // TODO: check errors
+pub unsafe fn create_shader(gl: &gl::Gl, shader_type: u32) -> Result<GLuint, String> {
+    Ok(gl.CreateShader(shader_type as u32)) // TODO: check errors
 }
 
-pub unsafe fn shader_source(shader: GLuint, source: &str) {
-    gl::ShaderSource(
+pub unsafe fn shader_source(gl: &gl::Gl, shader: GLuint, source: &str) {
+    gl.ShaderSource(
         shader,
         1,
         &(source.as_ptr() as *const GLchar),
@@ -117,19 +117,19 @@ pub unsafe fn shader_source(shader: GLuint, source: &str) {
     );
 }
 
-pub unsafe fn get_shader_compile_status(shader: GLuint) -> bool {
+pub unsafe fn get_shader_compile_status(gl: &gl::Gl, shader: GLuint) -> bool {
     let mut status = 0;
-    gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut status);
+    gl.GetShaderiv(shader, gl::COMPILE_STATUS, &mut status);
     1 == status
 }
 
-pub unsafe fn get_shader_info_log(shader: GLuint) -> String {
+pub unsafe fn get_shader_info_log(gl: &gl::Gl, shader: GLuint) -> String {
     let mut length = 0;
-    gl::GetShaderiv(shader, INFO_LOG_LENGTH, &mut length);
+    gl.GetShaderiv(shader, INFO_LOG_LENGTH, &mut length);
     if length > 0 {
         let mut log = String::with_capacity(length as usize);
         log.extend(std::iter::repeat('\0').take(length as usize));
-        gl::GetShaderInfoLog(
+        gl.GetShaderInfoLog(
             shader,
             length,
             &mut length,
@@ -142,27 +142,27 @@ pub unsafe fn get_shader_info_log(shader: GLuint) -> String {
     }
 }
 
-pub unsafe fn create_program() -> Result<GLuint, String> {
-    Ok(gl::CreateProgram()) // TODO: error check
+pub unsafe fn create_program(gl: &gl::Gl) -> Result<GLuint, String> {
+    Ok(gl.CreateProgram()) // TODO: error check
 }
 
-pub unsafe fn attach_shader(program: GLuint, shader: GLuint) {
-    gl::AttachShader(program, shader); // TODO: error check
+pub unsafe fn attach_shader(gl: &gl::Gl, program: GLuint, shader: GLuint) {
+    gl.AttachShader(program, shader); // TODO: error check
 }
 
-pub unsafe fn get_program_link_status(program: GLuint) -> bool {
+pub unsafe fn get_program_link_status(gl: &gl::Gl, program: GLuint) -> bool {
     let mut status = 0;
-    gl::GetProgramiv(program, LINK_STATUS, &mut status);
+    gl.GetProgramiv(program, LINK_STATUS, &mut status);
     1 == status
 }
 
-pub unsafe fn get_program_info_log(program: GLuint) -> String {
+pub unsafe fn get_program_info_log(gl: &gl::Gl, program: GLuint) -> String {
     let mut length = 0;
-    gl::GetProgramiv(program, INFO_LOG_LENGTH, &mut length);
+    gl.GetProgramiv(program, INFO_LOG_LENGTH, &mut length);
     if length > 0 {
         let mut log = String::with_capacity(length as usize);
         log.extend(std::iter::repeat('\0').take(length as usize));
-        gl::GetProgramInfoLog(
+        gl.GetProgramInfoLog(
             program,
             length,
             &mut length,
@@ -175,9 +175,9 @@ pub unsafe fn get_program_info_log(program: GLuint) -> String {
     }
 }
 
-pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> Option<GLint> {
+pub unsafe fn get_uniform_location(gl: &gl::Gl, program: GLuint, name: &str) -> Option<GLint> {
     let name = CString::new(name).unwrap();
-    let uniform_location = gl::GetUniformLocation(program, name.as_ptr() as *const GLchar);
+    let uniform_location = gl.GetUniformLocation(program, name.as_ptr() as *const GLchar);
     if uniform_location < 0 {
         None
     } else {
@@ -185,15 +185,15 @@ pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> Option<GLint>
     }
 }
 
-pub unsafe fn create_buffer() -> Result<GLuint, String> {
+pub unsafe fn create_buffer(gl: &gl::Gl) -> Result<GLuint, String> {
     let mut buffer = 0;
-    gl::GenBuffers(1, &mut buffer);
+    gl.GenBuffers(1, &mut buffer);
     Ok(buffer)
 }
 
-pub unsafe fn get_attrib_location(program: GLuint, name: &str) -> Option<u32> {
+pub unsafe fn get_attrib_location(gl: &gl::Gl, program: GLuint, name: &str) -> Option<u32> {
     let name = CString::new(name).unwrap();
-    let attrib_location = gl::GetAttribLocation(program, name.as_ptr() as *const GLchar);
+    let attrib_location = gl.GetAttribLocation(program, name.as_ptr() as *const GLchar);
     if attrib_location < 0 {
         None
     } else {
@@ -201,13 +201,14 @@ pub unsafe fn get_attrib_location(program: GLuint, name: &str) -> Option<u32> {
     }
 }
 
-pub unsafe fn create_vertex_array() -> Result<GLuint, String> {
+pub unsafe fn create_vertex_array(gl: &gl::Gl) -> Result<GLuint, String> {
     let mut vertex_array = 0;
-    gl::GenVertexArrays(1, &mut vertex_array);
+    gl.GenVertexArrays(1, &mut vertex_array);
     Ok(vertex_array)
 }
 
 pub unsafe fn vertex_attrib_pointer_f32(
+    gl: &gl::Gl,
     index: u32,
     size: i32,
     data_type: u32,
@@ -215,7 +216,7 @@ pub unsafe fn vertex_attrib_pointer_f32(
     stride: i32,
     offset: i32,
 ) {
-    gl::VertexAttribPointer(
+    gl.VertexAttribPointer(
         index,
         size,
         data_type,
@@ -225,16 +226,16 @@ pub unsafe fn vertex_attrib_pointer_f32(
     );
 }
 
-pub unsafe fn color_mask(red: bool, green: bool, blue: bool, alpha: bool) {
-    gl::ColorMask(red as u8, green as u8, blue as u8, alpha as u8);
+pub unsafe fn color_mask(gl: &gl::Gl, red: bool, green: bool, blue: bool, alpha: bool) {
+    gl.ColorMask(red as u8, green as u8, blue as u8, alpha as u8);
 }
 
-pub unsafe fn blend_equation_separate(mode_rgb: u32, mode_alpha: u32) {
-    gl::BlendEquationSeparate(mode_rgb as u32, mode_alpha as u32);
+pub unsafe fn blend_equation_separate(gl: &gl::Gl, mode_rgb: u32, mode_alpha: u32) {
+    gl.BlendEquationSeparate(mode_rgb as u32, mode_alpha as u32);
 }
 
-pub unsafe fn blend_func_separate(src_rgb: u32, dst_rgb: u32, src_alpha: u32, dst_alpha: u32) {
-    gl::BlendFuncSeparate(
+pub unsafe fn blend_func_separate(gl: &gl::Gl, src_rgb: u32, dst_rgb: u32, src_alpha: u32, dst_alpha: u32) {
+    gl.BlendFuncSeparate(
         src_rgb as u32,
         dst_rgb as u32,
         src_alpha as u32,
@@ -247,8 +248,8 @@ pub unsafe fn blend_func_separate(src_rgb: u32, dst_rgb: u32, src_alpha: u32, ds
 //     check_for_gl_error!("bind_vertex_array");
 // }
 
-pub unsafe fn buffer_data_u8_slice(target: u32, data: &[u8], usage: u32) {
-    gl::BufferData(
+pub unsafe fn buffer_data_u8_slice(gl: &gl::Gl, target: u32, data: &[u8], usage: u32) {
+    gl.BufferData(
         target,
         data.len() as isize,
         data.as_ptr() as *const std::ffi::c_void,
@@ -256,8 +257,8 @@ pub unsafe fn buffer_data_u8_slice(target: u32, data: &[u8], usage: u32) {
     );
 }
 
-pub unsafe fn create_texture() -> Result<GLuint, String> {
+pub unsafe fn create_texture(gl: &gl::Gl) -> Result<GLuint, String> {
     let mut name = 0;
-    gl::GenTextures(1, &mut name);
+    gl.GenTextures(1, &mut name);
     Ok(name)
 }

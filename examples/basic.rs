@@ -1,7 +1,6 @@
 use egui::Checkbox;
 use egui_backend::DpiScaling;
 use std::time::Instant;
-use winapi::um::shellscalingapi::{SetProcessDpiAwareness, PROCESS_PER_MONITOR_DPI_AWARE};
 // Alias the backend to something less mouthful
 use egui_sdl2_gl as egui_backend;
 use sdl2::{
@@ -42,13 +41,10 @@ fn main() {
 
     // Create a window context
     let _ctx = window.gl_create_context().unwrap();
-    gl::load_with(|name| {
-        // println!("Loading: {}", name);
-        window.subsystem().gl_get_proc_address(name) as *const _
-    });
+    let gl: gl::Gl = gl::Gl::load_with(|s| window.subsystem().gl_get_proc_address(s) as *const _);
 
     // Init egui stuff
-    let (mut painter, mut egui_state) = egui_backend::with_sdl2(&window, DpiScaling::Default);
+    let (mut painter, mut egui_state) = egui_backend::with_sdl2(&gl, &window, DpiScaling::Default);
     let egui_ctx = egui::Context::default();
     let mut event_pump = sdl.event_pump().unwrap();
 
@@ -102,8 +98,8 @@ fn main() {
         // First clear the background to something nice.
         unsafe {
             // Clear the screen to green
-            gl::ClearColor(0.3, 0.6, 0.3, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
+            gl.ClearColor(0.3, 0.6, 0.3, 1.0);
+            gl.Clear(gl::COLOR_BUFFER_BIT);
         }
 
         // TODO: correct replacement for "needs_repaint"?
