@@ -21,9 +21,9 @@ tracing = "*"
 memoffset = "0.6"
 bytemuck = "1.13"
 
-[dependencies.epi]
-version = "0.17"
-optional = true
+# [dependencies.epi]
+# version = "0.17"
+# optional = true
 
 [features]
 sdl2_unsafe_textures = ["sdl2/unsafe_textures"]
@@ -31,7 +31,7 @@ sdl2_gfx = ["sdl2/gfx"]
 sdl2_mixer = ["sdl2/mixer"]
 sdl2_image = ["sdl2/image"]
 sdl2_ttf = ["sdl2/ttf"]
-use_epi = ["epi"]
+# use_epi = ["epi"]
 
 [dev-dependencies]
 egui_demo_lib = "0.17"

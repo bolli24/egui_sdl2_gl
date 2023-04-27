@@ -18,6 +18,7 @@ pub(crate) struct BufferInfo {
 // ----------------------------------------------------------------------------
 
 /// Wrapper around either Emulated VAO or GL's VAO.
+#[allow(dead_code)]
 pub(crate) struct VertexArrayObject {
     gl: gl::Gl,
     vao: GLuint,
