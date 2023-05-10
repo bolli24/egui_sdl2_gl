@@ -428,7 +428,7 @@ impl Painter {
             self.gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
             self.gl.Disable(gl::SCISSOR_TEST);
 
-            // check_for_gl_error!("painting");
+            check_for_gl_error!(&self.gl, "painting");
         }
     }
 
@@ -437,6 +437,7 @@ impl Painter {
         debug_assert!(mesh.is_valid());
         if let Some(texture) = self.texture(mesh.texture_id) {
             unsafe {
+                self.gl.BindTexture(gl::TEXTURE_2D, texture);
                 self.gl.BindBuffer(gl::ARRAY_BUFFER, self.vbo);
                 buffer_data_u8_slice(
                     &self.gl,
@@ -483,6 +484,7 @@ impl Painter {
             .or_insert_with(|| unsafe { create_texture(&local_gl).unwrap() });
         unsafe {
             self.gl.BindTexture(gl::TEXTURE_2D, gl_texture);
+            check_for_gl_error!(local_gl, "painter.set_texture");
         }
 
         match &delta.image {
